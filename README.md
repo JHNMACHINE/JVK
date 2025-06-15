@@ -24,7 +24,7 @@ Here are 10 key steps to improve our simple key-value store with memtable, WAL, 
   Maintain in-memory or on-disk index for faster lookups  
   Consider memory-mapped files for efficient access
 
-- [ ] **6. Improve exception handling and logging**  
+- [X] **6. Improve exception handling and logging**  
   Use a logging framework (e.g. SLF4J, Log4J)  
   Handle I/O errors robustly with retries or fallback mechanisms
 

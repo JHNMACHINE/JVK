@@ -1,10 +1,14 @@
 package com.jkv;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.*;
 import java.util.*;
 import java.util.stream.Collectors;
 
 public class JKV {
+    private static final Logger logger = LoggerFactory.getLogger(JKV.class);
     private final File walFile = new File("wal.log");
     private final TreeMap<String, String> memtable = new TreeMap<>();
     private static final int MEMTABLE_LIMIT = 1000;
@@ -66,7 +70,6 @@ public class JKV {
     }
 
 
-
     public void del(String key) throws IOException {
         put(key, TOMBSTONE);
     }
@@ -120,8 +123,11 @@ public class JKV {
                 writer.write(entry.getKey() + "=" + entry.getValue());
                 writer.newLine();
             }
+        } catch (IOException e) {
+            logger.error("Error flushing MemTable to disk", e);
+            throw e; // or handle fallback if needed
         }
-        System.out.println("MemTable flushed to " + flushFile.getName());
+        logger.info("MemTable flushed to {}", flushFile.getName());
     }
 
     private void clearWAL() throws IOException {
@@ -142,16 +148,29 @@ public class JKV {
         mergeSSTables(toMerge, mergedFile);
 
         for (File f : toMerge) {
-            boolean deleted = f.delete();
-            if (deleted) {
-                System.out.println("Deleted old SSTable " + f.getName());
+            if (deleteWithRetry(f)) {
+                logger.info("Deleted old SSTable {}", f.getName());
             } else {
-                System.err.println("Failed to delete SSTable file: " + f.getAbsolutePath());
+                logger.error("Failed to delete SSTable file: {}", f.getAbsolutePath());
             }
         }
 
-        System.out.println("Compaction done, created " + mergedFile.getName());
+        logger.info("Compaction done, created {}", mergedFile.getName());
     }
+
+    private boolean deleteWithRetry(File file) {
+        for (int i = 0; i < 3; i++) {
+            if (file.delete()) return true;
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return false;
+    }
+
 
     private void mergeSSTables(List<File> inputs, File output) throws IOException {
         List<BufferedReader> readers = new ArrayList<>();
