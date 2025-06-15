@@ -16,7 +16,7 @@ Here are 10 key steps to improve our simple key-value store with memtable, WAL, 
   Implement SSTable file compression  
   Add checksums or magic numbers to detect corrupted files
 
-- [ ] **4. Clearly handle tombstones for deletions**  
+- [X] **4. Clearly handle tombstones for deletions**  
   Define an explicit tombstone value (e.g. `"__TOMBSTONE__"`)  
   Persist tombstones in SSTables to prevent resurrecting deleted keys
 
