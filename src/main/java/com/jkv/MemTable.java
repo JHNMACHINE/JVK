@@ -42,4 +42,8 @@ public class MemTable {
         return memtable.containsKey(key);
     }
 
+    public int size() {
+        return memtable.size();
+    }
+
 }

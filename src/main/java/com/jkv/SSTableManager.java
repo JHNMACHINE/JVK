@@ -12,6 +12,7 @@ public class SSTableManager {
     private final File sstableDir;
     private static final int MAGIC = 0x4A4B565F; // "JKV_"
     private static final String TOMBSTONE = "__TOMBSTONE__";
+    private final List<SSTable> sstables = new ArrayList<>();
 
     public SSTableManager(File sstableDir) throws IOException {
         this.sstableDir = sstableDir;
@@ -21,78 +22,42 @@ public class SSTableManager {
                 throw new IOException("Failed to create directory tree: " + sstableDir.getAbsolutePath());
             }
         }
+        loadSSTables();
+    }
+
+    private void loadSSTables() throws IOException {
+        File[] binFiles = sstableDir.listFiles((_, name) -> name.endsWith(".bin"));
+        if (binFiles == null) return;
+
+        for (File binFile : binFiles) {
+            File idxFile = new File(binFile.getAbsolutePath().replace(".bin", ".idx"));
+            if (!idxFile.exists()) {
+                logger.warn("Missing index file for SSTable: {}", binFile.getName());
+                continue;
+            }
+            sstables.add(new SSTable(binFile, idxFile));
+        }
     }
 
     public void flush(TreeMap<String, String> memtable) throws IOException {
         long ts = System.currentTimeMillis();
         File flushFile = new File(sstableDir, "sstable_" + ts + ".bin");
+        File indexFile = new File(sstableDir, "sstable_" + ts + ".idx");
 
-        try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(flushFile)))) {
-            out.writeInt(MAGIC);
-            out.writeInt(memtable.size());
+        writeSSTableWithIndex(flushFile, indexFile, memtable);
 
-            for (Map.Entry<String, String> entry : memtable.entrySet()) {
-                byte[] keyBytes = entry.getKey().getBytes(StandardCharsets.UTF_8);
-                byte[] valueBytes = entry.getValue() == null ? null : entry.getValue().getBytes(StandardCharsets.UTF_8);
-
-                out.writeInt(keyBytes.length);
-                out.write(keyBytes);
-
-                if (valueBytes == null) {
-                    out.writeInt(-1); // tombstone
-                } else {
-                    out.writeInt(valueBytes.length);
-                    out.write(valueBytes);
-                }
-            }
-        }
-
-        logger.info("MemTable flushed to binary SSTable: {}", flushFile.getName());
+        logger.info("Flushed MemTable with index: {} and {}", flushFile.getName(), indexFile.getName());
+        sstables.add(new SSTable(flushFile, indexFile));
     }
 
-    public String search(File file, String key) throws IOException {
-        try (DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(file)))) {
-            int magic = in.readInt();
-            if (magic != MAGIC) {
-                throw new IOException("Corrupted SSTable: " + file.getName());
-            }
-
-            int numEntries = in.readInt();
-
-            for (int i = 0; i < numEntries; i++) {
-                int keyLen = in.readInt();
-                byte[] keyBytes = in.readNBytes(keyLen);
-                String currentKey = new String(keyBytes, StandardCharsets.UTF_8);
-
-                int valLen = in.readInt();
-                byte[] valueBytes = (valLen == -1) ? null : in.readNBytes(valLen);
-                String currentValue = (valueBytes == null) ? null : new String(valueBytes, StandardCharsets.UTF_8);
-
-                int cmp = currentKey.compareTo(key);
-                if (cmp == 0) return currentValue;
-                if (cmp > 0) break;
+    public String getFromSSTables(String key) {
+        for (int i = sstables.size() - 1; i >= 0; i--) {
+            String val = sstables.get(i).search(key);
+            if (val != null) {
+                if (TOMBSTONE.equals(val)) return null;
+                return val;
             }
         }
-
-        return null;
-    }
-
-    public String getFromSSTables(String key) throws IOException {
-        File[] files = sstableDir.listFiles((_, name) -> name.startsWith("sstable_"));
-        if (files == null) return null;
-
-        List<File> sortedFiles = Arrays.stream(files)
-                .sorted(Comparator.comparing(File::getName).reversed())
-                .toList();
-
-        for (File f : sortedFiles) {
-            String value = search(f, key);
-            if (value != null) {
-                if (TOMBSTONE.equals(value)) return null;
-                return value;
-            }
-        }
-
         return null;
     }
 
@@ -104,6 +69,7 @@ public class SSTableManager {
 
         Map<String, String> mergedMap = new TreeMap<>();
 
+        // Carica tutte le SSTable in mergedMap
         for (File file : files) {
             try (DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(file)))) {
                 int magic = in.readInt();
@@ -126,46 +92,74 @@ public class SSTableManager {
             }
         }
 
-        File compacted = new File(sstableDir, "sstable_" + System.currentTimeMillis() + "_merged.bin");
-        try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(compacted)))) {
-            out.writeInt(MAGIC);
-            out.writeInt(mergedMap.size());
+        // Nuovo nome per la SSTable compatta
+        String baseName = "sstable_" + System.currentTimeMillis() + "_merged";
+        File compactedBin = new File(sstableDir, baseName + ".bin");
+        File compactedIdx = new File(sstableDir, baseName + ".idx");
 
-            for (Map.Entry<String, String> entry : mergedMap.entrySet()) {
-                byte[] keyBytes = entry.getKey().getBytes(StandardCharsets.UTF_8);
-                out.writeInt(keyBytes.length);
-                out.write(keyBytes);
+        writeSSTableWithIndex(compactedBin, compactedIdx, mergedMap);
 
-                if (entry.getValue() == null) {
-                    out.writeInt(-1); // tombstone
-                } else {
-                    byte[] valueBytes = entry.getValue().getBytes(StandardCharsets.UTF_8);
-                    out.writeInt(valueBytes.length);
-                    out.write(valueBytes);
-                }
+        logger.info("Compacted SSTables into: {} and {}", compactedBin.getName(), compactedIdx.getName());
+
+        // Cancella vecchi file .bin e .idx
+        for (File file : files) {
+            File idxFile = new File(file.getAbsolutePath().replace(".bin", ".idx"));
+
+            if (deleteWithRetry(file)) {
+                logger.warn("Failed to delete old SSTable: {}", file.getName());
+            }
+            if (idxFile.exists() && deleteWithRetry(idxFile)) {
+                logger.warn("Failed to delete old SSTable index: {}", idxFile.getName());
             }
         }
 
-        logger.info("Compacted SSTables into: {}", compacted.getName());
+        // Ricarica SSTables per aggiornare la lista in memoria
+        sstables.clear();
+        loadSSTables();
+    }
 
-        // Delete old SSTables
-        for (File file : files) {
-            if (!deleteWithRetry(file)) {
-                logger.warn("Failed to delete old SSTable: {}", file.getName());
+    private void writeSSTableWithIndex(File binFile, File idxFile, Map<String, String> data) throws IOException {
+        try (RandomAccessFile raf = new RandomAccessFile(binFile, "rw");
+             DataOutputStream idxOut = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(idxFile)))) {
+
+            raf.writeInt(MAGIC);
+            raf.writeInt(data.size());
+
+            for (Map.Entry<String, String> entry : data.entrySet()) {
+                long pos = raf.getFilePointer();
+
+                byte[] keyBytes = entry.getKey().getBytes(StandardCharsets.UTF_8);
+                byte[] valBytes = entry.getValue() == null ? null : entry.getValue().getBytes(StandardCharsets.UTF_8);
+
+                raf.writeInt(keyBytes.length);
+                raf.write(keyBytes);
+
+                if (valBytes == null) {
+                    raf.writeInt(-1);
+                } else {
+                    raf.writeInt(valBytes.length);
+                    raf.write(valBytes);
+                }
+
+                // Scrivi indice: chiave + posizione
+                idxOut.writeInt(keyBytes.length);
+                idxOut.write(keyBytes);
+                idxOut.writeLong(pos);
             }
         }
     }
 
+
     private boolean deleteWithRetry(File file) {
         for (int i = 0; i < 3; i++) {
-            if (file.delete()) return true;
+            if (file.delete()) return false;
             try {
                 Thread.sleep(100);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                return false;
+                return true;
             }
         }
-        return false;
+        return true;
     }
 }
