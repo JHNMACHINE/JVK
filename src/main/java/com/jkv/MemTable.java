@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Map;
 import java.util.TreeMap;
 
 public class MemTable {
@@ -38,6 +39,8 @@ public class MemTable {
         logger.info("MemTable flushed and cleared.");
     }
 
+
+
     public boolean containsKey(String key) {
         return memtable.containsKey(key);
     }
@@ -46,4 +49,11 @@ public class MemTable {
         return memtable.size();
     }
 
+    public TreeMap<String, String> getMemtable(){
+        return this.memtable;
+    }
+
+    public Iterable<? extends Map.Entry<String, String>> entrySet() {
+        return memtable.entrySet();
+    }
 }

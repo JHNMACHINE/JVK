@@ -11,7 +11,7 @@ public class SSTableManager {
     private static final Logger logger = LoggerFactory.getLogger(SSTableManager.class);
     private final File sstableDir;
     private static final int MAGIC = 0x4A4B565F; // "JKV_"
-    private static final String TOMBSTONE = "__TOMBSTONE__";
+    static final String TOMBSTONE = "__TOMBSTONE__";
     private final List<SSTable> sstables = new ArrayList<>();
 
     public SSTableManager(File sstableDir) throws IOException {
@@ -162,4 +162,9 @@ public class SSTableManager {
         }
         return true;
     }
+
+    public List<SSTable> getSSTables() {
+        return Collections.unmodifiableList(sstables);
+    }
+
 }

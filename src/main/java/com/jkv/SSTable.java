@@ -5,7 +5,7 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.StandardOpenOption;
-import java.util.TreeMap;
+import java.util.*;
 
 public class SSTable {
     final File binFile;
@@ -54,5 +54,45 @@ public class SSTable {
         } catch (IOException e) {
             return null;
         }
+    }
+
+    public Iterable<Map.Entry<String, String>> iterate() {
+        return () -> new Iterator<>() {
+            private final Iterator<Map.Entry<String, Long>> idxIter = index.entrySet().iterator();
+
+            @Override
+            public boolean hasNext() {
+                return idxIter.hasNext();
+            }
+
+            @Override
+            public Map.Entry<String, String> next() {
+                if (!hasNext()) throw new NoSuchElementException();
+
+                Map.Entry<String, Long> idxEntry = idxIter.next();
+                String key = idxEntry.getKey();
+                Long offset = idxEntry.getValue();
+
+                String value;
+                try (RandomAccessFile raf = new RandomAccessFile(binFile, "r")) {
+                    raf.seek(offset);
+                    int keyLen = raf.readInt();
+                    raf.skipBytes(keyLen);
+
+                    int valLen = raf.readInt();
+                    if (valLen == -1) { // tombstone
+                        value = "__TOMBSTONE__";
+                    } else {
+                        byte[] valBytes = new byte[valLen];
+                        raf.readFully(valBytes);
+                        value = new String(valBytes, StandardCharsets.UTF_8);
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+
+                return new AbstractMap.SimpleEntry<>(key, value);
+            }
+        };
     }
 }

@@ -5,6 +5,10 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 
 public class JKV {
     private static final Logger logger = LoggerFactory.getLogger(JKV.class);
@@ -47,23 +51,93 @@ public class JKV {
     }
 
     public void del(String key) throws IOException {
-        logger.debug("Deleting key='{}' (marking as tombstone)", key);
         put(key, TOMBSTONE);
     }
 
     public String get(String key) {
         if (memTable.containsKey(key)) {
-            String value = memTable.get(key);
-            logger.debug("Found key='{}' in MemTable with value='{}'", key, value);
-            return value;
+            return memTable.get(key);
         }
 
-        String value = sstableManager.getFromSSTables(key);
-        if (value != null) {
-            logger.debug("Found key='{}' in SSTables with value='{}'", key, value);
-        } else {
-            logger.debug("Key='{}' not found in SSTables.", key);
+        return sstableManager.getFromSSTables(key);
+    }
+
+    public boolean containsKey(String key) {
+        String val = memTable.get(key);
+        if (val != null) return true;
+        if (memTable.containsKey(key)) return false; // è tombstone
+
+        return sstableManager.getFromSSTables(key) != null;
+    }
+
+    public int size() {
+        Set<String> seen = new HashSet<>();
+        int count = 0;
+
+        for (Map.Entry<String, String> entry : memTable.entrySet()) {
+            if (!SSTableManager.TOMBSTONE.equals(entry.getValue())) {
+                seen.add(entry.getKey());
+                count++;
+            }
         }
-        return value;
+
+        for (SSTable sstable : sstableManager.getSSTables()) {
+            for (Map.Entry<String, String> entry : sstable.iterate()) {
+                if (seen.contains(entry.getKey())) continue;
+                if (!SSTableManager.TOMBSTONE.equals(entry.getValue())) {
+                    seen.add(entry.getKey());
+                    count++;
+                }
+            }
+        }
+
+        return count;
+    }
+
+    public void putAll(Map<String, String> map) throws IOException {
+        for (Map.Entry<String, String> entry : map.entrySet()) {
+            put(entry.getKey(), entry.getValue());
+        }
+    }
+
+    public Set<String> keySet() {
+        Map<String, String> merged = new TreeMap<>();
+        for (SSTable sstable : sstableManager.getSSTables()) {
+            for (Map.Entry<String, String> e : sstable.iterate()) {
+                merged.put(e.getKey(), e.getValue());
+            }
+        }
+        merged.putAll(memTable.getMemtable());
+        merged.values().removeIf(SSTableManager.TOMBSTONE::equals);
+        return merged.keySet();
+    }
+
+
+    public void clear() throws IOException {
+        for (String key : keySet()) {
+            del(key);  // usa il metodo del() per cancellare ogni chiave
+        }
+    }
+
+
+    public Iterable<? extends Map.Entry<String, String>> entrySet() {
+        // Usa una TreeMap per mantenere l'ordine e gestire conflitti (memTable prevale su SSTable)
+        Map<String, String> merged = new TreeMap<>();
+
+        // Prima carica tutte le entry dagli SSTable
+        for (SSTable sstable : sstableManager.getSSTables()) {
+            for (Map.Entry<String, String> e : sstable.iterate()) {
+                merged.put(e.getKey(), e.getValue());
+            }
+        }
+
+        // Sovrascrivi con i dati più recenti in memTable (inclusi tombstone)
+        merged.putAll(memTable.getMemtable());
+
+        // Rimuovi i tombstone (cioè le chiavi con valore tombstone)
+        merged.values().removeIf(SSTableManager.TOMBSTONE::equals);
+
+        // Restituisci l'entrySet del map risultante, che è Iterable<Map.Entry<String,String>>
+        return merged.entrySet();
     }
 }

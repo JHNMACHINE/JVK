@@ -10,10 +10,6 @@ Improvemente for our simple key-value store with memtable, WAL, and SSTables:
   Manage L0, L1, etc. levels to reduce compaction costs  
   Run compaction in the background to avoid blocking operations
 
-- [ ] **8. Expand API and functionality**  
-  Add methods like `containsKey()`, `size()`, `clear()`, and iterators  
-  Support batch operations like `putAll(Map<String,String>)`
-
 - [ ] **10. Optimize caching and metadata updates**  
   Cache SSTable file lists in memory  
   Avoid rebuilding indexes on every lookup  
@@ -47,6 +43,10 @@ Improvemente for our simple key-value store with memtable, WAL, and SSTables:
   Use SLF4J for logging (with warnings for missing/corrupt files)  
   Retry file deletions with backoff  
   Log meaningful messages for all I/O operations
+
+- [X] **8. Expand API and functionality**  
+  Add methods like `containsKey()`, `size()`, `clear()`, and iterators  
+  Support batch operations like `putAll(Map<String,String>)`
 
 - [x] **9. Modularize the codebase**  
   Extracted logic into `WalManager`, `MemTable`, `SSTableManager`, `SSTable`  
