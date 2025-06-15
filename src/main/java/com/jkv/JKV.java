@@ -9,6 +9,7 @@ import java.util.*;
 
 public class JKV {
     private static final Logger logger = LoggerFactory.getLogger(JKV.class);
+    private final WalManager walManager;
     private final File walFile = new File("wal.log");
     private final TreeMap<String, String> memtable = new TreeMap<>();
     private static final int MEMTABLE_LIMIT = 1000;
@@ -18,44 +19,19 @@ public class JKV {
     private static final int MAGIC = 0x4A4B565F; // "JKV_"
 
     public JKV() throws IOException {
+        walManager = new WalManager(walFile);
         if (!sstableDir.exists()) {
             boolean created = sstableDir.mkdirs();
             if (!created) {
                 throw new IOException("Failed to create directory tree: " + sstableDir.getAbsolutePath());
             }
         }
-        replayWAL();
-    }
-
-    private void replayWAL() throws IOException {
-        if (!walFile.exists()) return;
-
-        try (BufferedReader reader = new BufferedReader(new FileReader(walFile))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.startsWith("PUT ")) {
-                    String[] parts = line.substring(4).split("=", 2);
-                    if (parts.length == 2) {
-                        String value = parts[1];
-                        if ("null".equals(value)) {
-                            value = null;  // gestisci tombstone nel WAL come stringa "null"
-                        }
-                        memtable.put(parts[0], value);
-                    }
-                }
-            }
-        }
+        walManager.replay(entry -> memtable.put(entry.key(), entry.value()));
     }
 
     public void put(String key, String value) throws IOException {
         // 1. Scrivi prima sul WAL con sync su disco
-        try (FileOutputStream fos = new FileOutputStream(walFile, true);
-             BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(fos))) {
-            writer.write("PUT " + key + "=" + (value == null ? "null" : value));
-            writer.newLine();
-            writer.flush();      // svuota il buffer del writer
-            fos.getFD().sync();  // forza la scrittura fisica su disco
-        }
+        walManager.appendPut(key, value);
 
         // 2. Aggiorna la memtable in memoria
         memtable.put(key, value);
@@ -84,9 +60,7 @@ public class JKV {
         File[] files = sstableDir.listFiles((_, name) -> name.startsWith("sstable_"));
         if (files == null) return null;
 
-        List<File> sortedFiles = Arrays.stream(files)
-                .sorted(Comparator.comparing(File::getName).reversed())
-                .toList();
+        List<File> sortedFiles = Arrays.stream(files).sorted(Comparator.comparing(File::getName).reversed()).toList();
 
         for (File f : sortedFiles) {
             String value = searchSSTable(f, key);
@@ -127,8 +101,6 @@ public class JKV {
     }
 
 
-
-
     private void flushMemTableToDisk() throws IOException {
         long ts = System.currentTimeMillis();
         File flushFile = new File(sstableDir, "sstable_" + ts + ".bin");
@@ -158,7 +130,7 @@ public class JKV {
 
 
     private void clearWAL() throws IOException {
-        new FileWriter(walFile, false).close();
+        walManager.clear();
     }
 
     public void compactIfNeeded() throws IOException {
