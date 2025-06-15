@@ -18,10 +18,6 @@ Here are 10 key steps to improve our simple key-value store with memtable, WAL, 
   Add methods like `containsKey()`, `size()`, `clear()`, and iterators  
   Support batch operations like `putAll(Map<String,String>)`
 
-- [ ] **9. Modularize the codebase**  
-  Separate concerns into classes like `WalManager`, `MemTable`, `SSTableManager`  
-  Facilitate testing and maintenance
-
 - [ ] **10. Optimize caching and metadata updates**  
   Cache SSTable file lists in memory  
   Avoid rebuilding indexes on every lookup  
@@ -48,6 +44,10 @@ Here are 10 key steps to improve our simple key-value store with memtable, WAL, 
 - [X] **6. Improve exception handling and logging**  
   Use a logging framework (e.g. SLF4J, Log4J)  
   Handle I/O errors robustly with retries or fallback mechanisms
+
+- [X] **9. Modularize the codebase**  
+  Separate concerns into classes like `WalManager`, `MemTable`, `SSTableManager`  
+  Facilitate testing and maintenance
 
 ---
 

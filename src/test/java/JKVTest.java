@@ -17,17 +17,25 @@ public class JKVTest {
         File sstablesDir = new File("sstables");
         if (sstablesDir.exists()) {
             for (File f : Objects.requireNonNull(sstablesDir.listFiles())) {
-                f.delete();
+                boolean deleted = f.delete();
+                if (!deleted) {
+                    System.err.println("WARNING: Failed to delete file " + f.getAbsolutePath());
+                    // oppure usa logger.warn se hai logger a disposizione
+                }
             }
         }
 
         File wal = new File("wal.log");
         if (wal.exists()) {
-            wal.delete();
+            boolean deleted = wal.delete();
+            if (!deleted) {
+                System.err.println("WARNING: Failed to delete WAL file " + wal.getAbsolutePath());
+            }
         }
 
         db = new JKV();
     }
+
 
     @Test
     void testPutAndGet() throws IOException {
@@ -63,27 +71,31 @@ public class JKVTest {
 
     @Test
     void testCompactionRemovesTombstones() throws IOException {
-        // Forza la creazione di più SSTable per attivare la compaction
         int entriesPerFlush = 1000;
+
+        // Inserisce tanti dati per creare più SSTable e triggerare flush automatici e compaction interna
         for (int i = 0; i < entriesPerFlush * 4; i++) {
             db.put("key" + i, "val" + i);
         }
 
-        // Cancella alcune chiavi sparse
+        // Cancella alcune chiavi sparse (inserisce tombstone)
         for (int i = 0; i < entriesPerFlush * 4; i += 500) {
             db.del("key" + i);
         }
 
-        // Forza la compaction (chiamandola direttamente, o inserendo più dati)
-        db.compactIfNeeded();
+        // Inserisce ancora dati per forzare il flush e la compaction interni (scatenati da memTable.isFull())
+        for (int i = entriesPerFlush * 4; i < entriesPerFlush * 5; i++) {
+            db.put("key" + i, "val" + i);
+        }
 
-        // Verifica che chiavi cancellate siano assenti
-        for (int i = 0; i < (entriesPerFlush * 4); i += 500) {
+        // Ora verifica che le chiavi cancellate siano effettivamente rimosse (tombstone = null)
+        for (int i = 0; i < entriesPerFlush * 4; i += 500) {
             Assertions.assertNull(db.get("key" + i), "La chiave cancellata key" + i + " dovrebbe essere null");
         }
 
-        // Verifica che altre chiavi siano ancora presenti
+        // Verifica che alcune chiavi non cancellate siano ancora presenti
         Assertions.assertEquals("val1", db.get("key1"));
         Assertions.assertEquals("val999", db.get("key999"));
     }
+
 }
