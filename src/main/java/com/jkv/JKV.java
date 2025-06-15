@@ -11,7 +11,7 @@ public class JKV {
     private final File sstableDir = new File("sstables");
     private static final int MAX_SSTABLES = 3;
 
-    private static final String TOMBSTONE = null;
+    private static final String TOMBSTONE = "__TOMBSTONE__";
 
     public JKV() throws IOException {
         if (!sstableDir.exists()) {
@@ -86,10 +86,10 @@ public class JKV {
                 .toList();
 
         for (File f : sortedFiles) {
-            String v = searchSSTable(f, key);
-            if (v != null) {
-                if (v.equals("null")) return null; // tombstone
-                return v;
+            String value = searchSSTable(f, key);
+            if (value != null) {
+                if (TOMBSTONE.equals(value)) return null; // key is deleted
+                return value;
             }
         }
 
@@ -117,11 +117,8 @@ public class JKV {
         File flushFile = new File(sstableDir, "sstable_" + ts + ".db");
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(flushFile))) {
             for (Map.Entry<String, String> entry : memtable.entrySet()) {
-                // tombstone
-                if (!Objects.equals(entry.getValue(), TOMBSTONE)) {
-                    writer.write(entry.getKey() + "=" + entry.getValue());
-                    writer.newLine();
-                }
+                writer.write(entry.getKey() + "=" + entry.getValue());
+                writer.newLine();
             }
         }
         System.out.println("MemTable flushed to " + flushFile.getName());
