@@ -44,20 +44,28 @@ public class JKV {
     }
 
     public void put(String key, String value) throws IOException {
+        // 1. Scrivi prima sul WAL con sync su disco
+        try (FileOutputStream fos = new FileOutputStream(walFile, true);
+             BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(fos))) {
+            writer.write("PUT " + key + "=" + (value == null ? "null" : value));
+            writer.newLine();
+            writer.flush();      // svuota il buffer del writer
+            fos.getFD().sync();  // forza la scrittura fisica su disco
+        }
+
+        // 2. Aggiorna la memtable in memoria
+        memtable.put(key, value);
+
+        // 3. Se la memtable supera la dimensione, flush + clear WAL + compattazione
         if (memtable.size() >= MEMTABLE_LIMIT) {
             flushMemTableToDisk();
             memtable.clear();
             clearWAL();
             compactIfNeeded();
         }
-
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(walFile, true))) {
-            writer.write("PUT " + key + "=" + (value == null ? "null" : value));
-            writer.newLine();
-        }
-
-        memtable.put(key, value);
     }
+
+
 
     public void del(String key) throws IOException {
         put(key, TOMBSTONE);
