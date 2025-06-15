@@ -6,7 +6,6 @@ import org.slf4j.LoggerFactory;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class JKV {
     private static final Logger logger = LoggerFactory.getLogger(JKV.class);
@@ -14,7 +13,6 @@ public class JKV {
     private final TreeMap<String, String> memtable = new TreeMap<>();
     private static final int MEMTABLE_LIMIT = 1000;
     private final File sstableDir = new File("sstables");
-    private static final int MAX_SSTABLES = 3;
 
     private static final String TOMBSTONE = "__TOMBSTONE__";
     private static final int MAGIC = 0x4A4B565F; // "JKV_"
@@ -164,7 +162,7 @@ public class JKV {
     }
 
     public void compactIfNeeded() throws IOException {
-        File[] files = sstableDir.listFiles((dir, name) -> name.endsWith(".bin"));
+        File[] files = sstableDir.listFiles((_, name) -> name.endsWith(".bin"));
         if (files == null || files.length < 2) return;
 
         // Sort SSTables by name (timestamp-based)
@@ -220,7 +218,7 @@ public class JKV {
 
         // Delete old SSTables
         for (File file : files) {
-            if (!file.delete()) {
+            if (!deleteWithRetry(file)) {
                 logger.warn("Failed to delete old SSTable: {}", file.getName());
             }
         }
@@ -240,81 +238,5 @@ public class JKV {
         return false;
     }
 
-
-    private void mergeSSTables(List<File> inputs, File output) throws IOException {
-        List<BufferedReader> readers = new ArrayList<>();
-        try {
-            for (File f : inputs) {
-                readers.add(new BufferedReader(new FileReader(f)));
-            }
-
-            String[] currentLines = new String[readers.size()];
-            String[] currentKeys = new String[readers.size()];
-            String[] currentValues = new String[readers.size()];
-
-            for (int i = 0; i < readers.size(); i++) {
-                currentLines[i] = readers.get(i).readLine();
-                if (currentLines[i] != null) {
-                    String[] parts = currentLines[i].split("=", 2);
-                    currentKeys[i] = parts[0];
-                    currentValues[i] = parts[1];
-                } else {
-                    currentKeys[i] = null;
-                    currentValues[i] = null;
-                }
-            }
-
-            try (BufferedWriter writer = new BufferedWriter(new FileWriter(output))) {
-                while (true) {
-                    String minKey = null;
-                    int minIndex = -1;
-                    for (int i = 0; i < currentKeys.length; i++) {
-                        if (currentKeys[i] != null) {
-                            if (minKey == null || currentKeys[i].compareTo(minKey) < 0) {
-                                minKey = currentKeys[i];
-                                minIndex = i;
-                            }
-                        }
-                    }
-                    if (minKey == null) break;
-                    String finalKey = minKey;
-                    String finalValue = currentValues[minIndex];
-                    currentLines[minIndex] = readers.get(minIndex).readLine();
-                    if (currentLines[minIndex] != null) {
-                        String[] parts = currentLines[minIndex].split("=", 2);
-                        currentKeys[minIndex] = parts[0];
-                        currentValues[minIndex] = parts[1];
-                    } else {
-                        currentKeys[minIndex] = null;
-                        currentValues[minIndex] = null;
-                    }
-
-                    for (int i = 0; i < currentKeys.length; i++) {
-                        if (i != minIndex && finalKey.equals(currentKeys[i])) {
-                            finalValue = currentValues[i];
-                            currentLines[i] = readers.get(i).readLine();
-                            if (currentLines[i] != null) {
-                                String[] parts = currentLines[i].split("=", 2);
-                                currentKeys[i] = parts[0];
-                                currentValues[i] = parts[1];
-                            } else {
-                                currentKeys[i] = null;
-                                currentValues[i] = null;
-                            }
-                        }
-                    }
-
-                    if (!"null".equals(finalValue)) {
-                        writer.write(finalKey + "=" + finalValue);
-                        writer.newLine();
-                    }
-                }
-            }
-        } finally {
-            for (BufferedReader r : readers) {
-                if (r != null) r.close();
-            }
-        }
-    }
 
 }
