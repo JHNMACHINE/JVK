@@ -6,27 +6,9 @@ Here are 10 key steps to improve our simple key-value store with memtable, WAL, 
   Synchronize critical methods or use locks (e.g. `ReentrantReadWriteLock`)  
   Consider concurrent data structures like `ConcurrentSkipListMap`
 
-- [X] **2. Improve WAL management and crash recovery**  
-  Always write to the WAL before updating the memtable  
-  Flush and clear memtable only after reaching threshold  
-  Consider using `FileDescriptor.sync()` for durable writes
-
-- [X] **3. Use a more structured and possibly compressed file format**  
-  Consider binary or JSON formats with proper escaping  
-  Implement SSTable file compression  
-  Add checksums or magic numbers to detect corrupted files
-
-- [X] **4. Clearly handle tombstones for deletions**  
-  Define an explicit tombstone value (e.g. `"__TOMBSTONE__"`)  
-  Persist tombstones in SSTables to prevent resurrecting deleted keys
-
 - [ ] **5. Optimize SSTable search**  
   Maintain in-memory or on-disk index for faster lookups  
   Consider memory-mapped files for efficient access
-
-- [X] **6. Improve exception handling and logging**  
-  Use a logging framework (e.g. SLF4J, Log4J)  
-  Handle I/O errors robustly with retries or fallback mechanisms
 
 - [ ] **7. Implement multi-level and asynchronous compaction**  
   Manage L0, L1, etc. levels to reduce compaction costs  
@@ -44,6 +26,28 @@ Here are 10 key steps to improve our simple key-value store with memtable, WAL, 
   Cache SSTable file lists in memory  
   Avoid rebuilding indexes on every lookup  
   Consider asynchronous refresh and invalidation strategies
+
+---
+
+## Completed steps
+
+- [X] **2. Improve WAL management and crash recovery**  
+  Always write to the WAL before updating the memtable  
+  Flush and clear memtable only after reaching threshold  
+  Consider using `FileDescriptor.sync()` for durable writes
+
+- [X] **3. Use a more structured and possibly compressed file format**  
+  Consider binary or JSON formats with proper escaping  
+  Implement SSTable file compression  
+  Add checksums or magic numbers to detect corrupted files
+
+- [X] **4. Clearly handle tombstones for deletions**  
+  Define an explicit tombstone value (e.g. `"__TOMBSTONE__"`)  
+  Persist tombstones in SSTables to prevent resurrecting deleted keys
+
+- [X] **6. Improve exception handling and logging**  
+  Use a logging framework (e.g. SLF4J, Log4J)  
+  Handle I/O errors robustly with retries or fallback mechanisms
 
 ---
 
