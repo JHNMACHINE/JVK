@@ -11,7 +11,7 @@ Here are 10 key steps to improve our simple key-value store with memtable, WAL, 
   Flush and clear memtable only after reaching threshold  
   Consider using `FileDescriptor.sync()` for durable writes
 
-- [ ] **3. Use a more structured and possibly compressed file format**  
+- [X] **3. Use a more structured and possibly compressed file format**  
   Consider binary or JSON formats with proper escaping  
   Implement SSTable file compression  
   Add checksums or magic numbers to detect corrupted files
